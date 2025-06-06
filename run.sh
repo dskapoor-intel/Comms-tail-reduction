@@ -5,7 +5,7 @@
 PROFILE=0
 RUN_ENV=CONTAINER
 NUM_RANKS=64
-CASE=1
+CASE=3
 MULTINODE=1
 MYHOSTFILE=/etc/mpi/hostfile
 export PT_HPU_LAZY_MODE=1
@@ -63,14 +63,10 @@ echo "MY_MASTER_ADDR = $MY_MASTER_ADDR"
 if [ $CASE = 1 ]; then
 	#BIN_NAME="./src/overlap_v1.py"
 	BIN_NAME="./src/tail_reduction_v1.py"
-	#if [ $NUM_RANKS != 1 ]; then 
-        #	echo "CASE 1 must be run with 1 rank only. Set NUM_RANKS = 1 and rerun!"
-	#	exit 1
-	#fi
 elif [ $CASE = 2 ]; then
-	BIN_NAME="./src/overlap_v2.py"
+	BIN_NAME="./src/tail_reduction_simplified.py"
 elif [ $CASE = 3 ]; then
-	BIN_NAME="./src/overlap_v3.py"
+	BIN_NAME="./src/tail_reduction_v2.py"
 elif [ $CASE = 4 ]; then
 	BIN_NAME="./src/overlap_v4.py"
 else
@@ -83,7 +79,7 @@ echo "BIN_NAME = $BIN_NAME"
 if [ $MULTINODE = 1 ]; then
       # Multi-node run, hence use a hostfile
       # other --mca options: --mca btl openib,self --mca btl_tcp_if_include eth0 
-      $MPI_LAUNCHER  --allow-run-as-root  --mca btl_tcp_if_include eth0 --hostfile $MYHOSTFILE -x LD_LIBRARY_PATH -x HCL_ROOT -x SYNAPSE_ROOT -x BUILD_ROOT_LATEST -x GC_KERNEL_PATH -x ENGINES_FW_RELEASE_BUILD -x HABANA_PROFILE -x PT_HPU_LAZY_MODE -n $NUM_RANKS python3 $BIN_NAME $MY_MASTER_ADDR 2>&1 | tee LOG1_G3_4Nodes_64HPU_100MB_perR_2000iter_1.22.0-10_Lazy.dat
+      $MPI_LAUNCHER  --allow-run-as-root  --mca btl_tcp_if_include eth0 --hostfile $MYHOSTFILE  --bind-to core --map-by socket:PE=14 --rank-by core --report-bindings -x LD_LIBRARY_PATH -x HCL_ROOT -x SYNAPSE_ROOT -x BUILD_ROOT_LATEST -x GC_KERNEL_PATH -x ENGINES_FW_RELEASE_BUILD -x HABANA_PROFILE -x PT_HPU_LAZY_MODE -x LOG_LEVEL_PT_BRIDGE -x GRAPH_VISUALIZATION -x HABANA_LOGS -n $NUM_RANKS python3 $BIN_NAME $MY_MASTER_ADDR 
 elif [ $MULTINODE = 0 ]; then
       # Single-node run     
       $MPI_LAUNCHER  --allow-run-as-root --mca btl_tcp_if_include eth0 -n $NUM_RANKS -x HABANA_PROFILE -x PT_HPU_LAZY_MODE python3 $BIN_NAME 
