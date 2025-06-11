@@ -6,7 +6,18 @@ import torch.distributed as dist
 from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.data.distributed import DistributedSampler
 import torch.multiprocessing as mp
- 
+import matplotlib.pyplot as plt
+from datetime import datetime 
+
+def install_package(package_name):
+    try:
+        # Use subprocess to call pip and install the package
+        subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
+        print(f"Package '{package_name}' installed successfully.")
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to install package '{package_name}'. Error: {e}")
+        exit()
+
 try:
     import habana_frameworks.torch as ht
     import habana_frameworks.torch.distributed.hccl
@@ -37,14 +48,14 @@ class SimpleNN(nn.Module):
         x = self.sigmoid(x)
         return x
  
-def train_loop(rank, world_size):
+def train_loop(rank, world_size, global_loss_list):
     print(f"Starting training on rank {rank} with explicit all_reduce...")
     setup(rank, world_size)
  
     # Determine the device for this process
     device = torch.device("hpu")
     print(f"Rank {rank} using device: {device}")
- 
+
     # Create some dummy data
     X = torch.randn(1000, 10)
     y = torch.randint(0, 2, (1000, 1)).float()
@@ -61,6 +72,7 @@ def train_loop(rank, world_size):
     optimizer = optim.Adam(model.parameters(), lr=0.001)
  
     num_epochs = 10
+
     for epoch in range(num_epochs):
         sampler.set_epoch(epoch)
         running_loss = 0.0
@@ -83,9 +95,16 @@ def train_loop(rank, world_size):
  
             print(f"Rank {rank}, Epoch [{epoch+1}/{num_epochs}], Step [{i}/{len(dataloader)}], Loss: {loss.item():.4f}")
  
-        avg_loss = running_loss / len(dataloader)
+        #avg_loss = running_loss / len(dataloader)
+
+        # Calculate avg_loss across all ranks
+        total_loss_tensor = torch.tensor(running_loss, device=device)
+        dist.all_reduce(total_loss_tensor, op=dist.ReduceOp.SUM)
+        avg_loss = total_loss_tensor.item() / len(dataloader) / world_size
+       
         if rank == 0:
-            print(f"Epoch {epoch+1} finished. Average Loss: {avg_loss:.4f}")
+            global_loss_list.append(avg_loss)
+            print(f"Epoch {epoch+1} finished. Global Average Loss: {avg_loss:.4f}")
  
     print(f"Training on rank {rank} finished.")
     cleanup()
@@ -93,7 +112,20 @@ def train_loop(rank, world_size):
 def main():
     world_size = 8
     print(f"Starting distributed training with world_size={world_size}")
-    mp.spawn(train_loop, args=(world_size,), nprocs=world_size, join=True)
+    global_loss_list = mp.Manager().list()  # Shared list to store global loss
+    mp.spawn(train_loop, args=(world_size, global_loss_list), nprocs=world_size, join=True)
+
+    # Plot the global loss on rank 0
+    plt.plot(global_loss_list)
+    plt.xlabel('Epoch')
+    plt.ylabel('Global Average Loss')
+    plt.title('Global Loss Over Epochs')
+    plt.show()
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_file=f"loss_curve_{timestamp}.png"
+    plt.savefig(out_file, format='png')
+    print(f"Loss curve saved to {out_file}")
     print("All distributed HPU processes finished.")
  
 if __name__ == "__main__":
