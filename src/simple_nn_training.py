@@ -11,6 +11,8 @@ from datetime import datetime
 import random
 import numpy as np
 
+downcast_to_bf16 = 1         # If 1, the allreduce tensors are downcasted from fp32 to bf16
+
 def set_seed(seed):
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -93,8 +95,24 @@ def train_loop(rank, world_size, global_loss_list):
             loss.backward()
  
             for param in model.parameters():
+
                 if param.grad is not None:
-                    dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM)
+                    print(f"BEFORE: param.grad.dtype = {param.grad.dtype}")
+                    if downcast_to_bf16 == 1:
+                        mytype=torch.bfloat16 # 16 bit
+                        temp = param.grad.data
+                        print(f"BEFORE: temp.dtype = {temp.dtype}")
+                        temp = temp.to(mytype)
+                        print(f"AFTER: temp.dtype = {temp.dtype}")
+                        dist.all_reduce(temp, op=dist.ReduceOp.SUM)
+
+                        # Upcast temp to fp32 before assigning back to param.grad.data
+                        temp = temp.to(torch.float32)
+                        param.grad.data = temp
+                    else:
+                        dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM)
+                    
+                    # This is independent of downcast_to_bf16
                     param.grad.data /= world_size
  
             optimizer.step()
@@ -128,7 +146,7 @@ def main():
     plt.plot(global_loss_list)
     plt.xlabel('Epoch')
     plt.ylabel('Global Average Loss')
-    plt.title('Global Loss Over Epochs')
+    plt.title(f'Global Loss Over Epochs \n downcast_to_bf16 = {downcast_to_bf16}')
     plt.show()
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
