@@ -7,7 +7,14 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.data.distributed import DistributedSampler
 import torch.multiprocessing as mp
 import matplotlib.pyplot as plt
-from datetime import datetime 
+from datetime import datetime
+import random
+import numpy as np
+
+def set_seed(seed):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
 
 def install_package(package_name):
     try:
@@ -56,6 +63,7 @@ def train_loop(rank, world_size, global_loss_list):
     device = torch.device("hpu")
     print(f"Rank {rank} using device: {device}")
 
+    set_seed(88)
     # Create some dummy data
     X = torch.randn(1000, 10)
     y = torch.randint(0, 2, (1000, 1)).float()
@@ -110,6 +118,7 @@ def train_loop(rank, world_size, global_loss_list):
     cleanup()
  
 def main():
+    set_seed(88)
     world_size = 8
     print(f"Starting distributed training with world_size={world_size}")
     global_loss_list = mp.Manager().list()  # Shared list to store global loss
